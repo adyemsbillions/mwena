@@ -40,7 +40,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     // Check user credentials
-    $stmt = $conn->prepare("SELECT id, first_name, last_name, email, role, password, status FROM users WHERE email = ?");
+    $stmt = $conn->prepare("SELECT id, name, email, role, password FROM users WHERE email = ?");
     $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -55,19 +55,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $user = $result->fetch_assoc();
     $stmt->close();
 
-    // Verify password and account status
+    // Verify password
     if (password_verify($password, $user['password'])) {
-        if ($user['status'] !== 'active') {
-            echo json_encode(['status' => 'error', 'message' => 'Account is not active. Please contact the administrator.']);
-            $conn->close();
-            exit;
-        }
-
         // Set session data
         $_SESSION['mwena_user'] = [
             'id' => $user['id'],
             'email' => $user['email'],
-            'name' => $user['first_name'] . ' ' . $user['last_name'],
+            'name' => $user['name'],
             'role' => $user['role'],
             'login_time' => date('c')
         ];
