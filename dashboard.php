@@ -1518,7 +1518,8 @@ $user = $_SESSION['mwena_user'];
             .then(data => {
                 showLoading(false);
                 if (data.status === 'success') {
-                    generateReceipt(data.sale_id, customerId);
+                    const saleId = data.sale_id;
+                    generateReceipt(saleId, customerId);
                     cart = [];
                     updateCartDisplay();
                     document.getElementById('posProductSearch').value = '';
@@ -1536,6 +1537,72 @@ $user = $_SESSION['mwena_user'];
                 console.error('processCheckout Error:', error);
                 showLoading(false);
                 showError('Checkout failed: ' + error.message);
+            });
+    }
+
+    function sendReceiptEmail() {
+        const customerId = document.getElementById('customerSelect').value;
+        if (!customerId) {
+            showError('Please select a customer to send the receipt via email.');
+            return;
+        }
+        showLoading(true);
+        fetch('fetch_sales.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `id=${cart.saleId || document.getElementById('receiptContent').dataset.saleId || ''}`
+            })
+            .then(response => {
+                console.log('sendReceiptEmail fetch_sales Response Status:', response.status);
+                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                return response.json();
+            })
+            .then(sales => {
+                if (sales.length > 0) {
+                    const saleId = sales[0].id;
+                    document.getElementById('receiptContent').dataset.saleId =
+                        saleId; // Store saleId for future reference
+                    fetch('send_receipt.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                sale_id: saleId,
+                                customer_id: customerId,
+                                receipt_html: document.getElementById('receiptContent').innerHTML
+                            })
+                        })
+                        .then(response => {
+                            console.log('sendReceiptEmail Response Status:', response.status);
+                            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                            return response.json();
+                        })
+                        .then(data => {
+                            showLoading(false);
+                            if (data.status === 'success') {
+                                showSuccess('Receipt sent successfully!');
+                                closeModal('receiptModal');
+                            } else {
+                                showError(data.message || 'Failed to send receipt');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('sendReceiptEmail send_receipt Error:', error);
+                            showLoading(false);
+                            showError('Failed to send receipt: ' + error.message);
+                        });
+                } else {
+                    showLoading(false);
+                    showError('Sale not found');
+                }
+            })
+            .catch(error => {
+                console.error('sendReceiptEmail fetch_sales Error:', error);
+                showLoading(false);
+                showError('Failed to fetch sale data: ' + error.message);
             });
     }
 
@@ -1572,7 +1639,9 @@ $user = $_SESSION['mwena_user'];
                 }
                 const sale = sales[0];
                 const customerData = customer && customer.length > 0 ? customer[0] : null;
-                document.getElementById('receiptContent').innerHTML = `
+                const receiptContent = document.getElementById('receiptContent');
+                receiptContent.dataset.saleId = sale.id; // Store saleId
+                receiptContent.innerHTML = `
             <div class="receipt-header">
                 <h2>MWENA SUPERMARKET</h2>
                 <p>Kireka Namugongo Road, 2km from Kampala</p>
