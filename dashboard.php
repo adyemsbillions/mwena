@@ -1344,12 +1344,12 @@ $user = $_SESSION['mwena_user'];
                         resultItem.className = 'search-result-item';
                         resultItem.onclick = () => addToCart(product);
                         resultItem.innerHTML = `
-                            <div class="product-info">
-                                <h4>${product.name}</h4>
-                                <p>${product.category} • Stock: ${product.stock} • Barcode: ${product.barcode}</p>
-                            </div>
-                            <div class="product-price">$${parseFloat(product.price).toFixed(2)}</div>
-                        `;
+                    <div class="product-info">
+                        <h4>${product.name}</h4>
+                        <p>${product.category} • Stock: ${product.stock} • Barcode: ${product.barcode}</p>
+                    </div>
+                    <div class="product-price">$${parseFloat(product.price).toFixed(2)}</div>
+                `;
                         resultsContainer.appendChild(resultItem);
                     });
                     resultsContainer.style.display = 'block';
@@ -1366,30 +1366,55 @@ $user = $_SESSION['mwena_user'];
     }
 
     function addToCart(product) {
-        if (product.stock <= 0) {
-            showError('This product is out of stock!');
-            return;
-        }
-        const existingItem = cart.find(item => item.id === product.id);
-        if (existingItem) {
-            if (existingItem.quantity < product.stock) {
-                existingItem.quantity++;
+        const cartItem = cart.find(item => item.id === product.id);
+        if (cartItem) {
+            if (cartItem.quantity < product.stock) {
+                cartItem.quantity++;
             } else {
-                showError('Cannot add more items. Stock limit reached!');
-                return;
+                showError('Cannot add more; stock limit reached');
             }
         } else {
-            cart.push({
-                id: product.id,
-                name: product.name,
-                price: parseFloat(product.price),
-                quantity: 1,
-                stock: product.stock
-            });
+            if (product.stock > 0) {
+                cart.push({
+                    id: product.id,
+                    name: product.name,
+                    price: parseFloat(product.price),
+                    quantity: 1,
+                    stock: product.stock
+                });
+            } else {
+                showError('Product out of stock');
+            }
         }
         updateCartDisplay();
-        document.getElementById('posProductSearch').value = '';
-        document.getElementById('posSearchResults').style.display = 'none';
+    }
+
+    function addProduct(e) {
+        e.preventDefault();
+        const id = document.getElementById('productId').value;
+        const name = document.getElementById('productName').value;
+        const category = document.getElementById('productCategory').value;
+        const price = parseFloat(document.getElementById('productPrice').value);
+        const stock = parseInt(document.getElementById('productStock').value);
+        const barcode = document.getElementById('productBarcode').value;
+        const description = document.getElementById('productDescription').value;
+        showLoading(true);
+        fetch('save_product.php', { // Changed from save_product.php to save_products.php
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id,
+                name,
+                category,
+                price,
+                stock,
+                barcode,
+                description
+            })
+        })
+        // ... rest of the function remains the same
     }
 
     function updateCartDisplay() {
@@ -1472,6 +1497,8 @@ $user = $_SESSION['mwena_user'];
         }
         showLoading(true);
         const customerId = document.getElementById('customerSelect').value || null;
+        const userId = <?php echo $user['id']; ?>;
+        console.log('processCheckout called with cart:', cart, 'user_id:', userId, 'customer_id:', customerId);
         fetch('process_checkout.php', {
                 method: 'POST',
                 headers: {
@@ -1479,18 +1506,18 @@ $user = $_SESSION['mwena_user'];
                 },
                 body: JSON.stringify({
                     cart,
-                    user_id: <?php echo $user['id']; ?>,
+                    user_id: userId,
                     customer_id: customerId
                 })
             })
             .then(response => {
                 console.log('processCheckout Response Status:', response.status);
+                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
                 return response.json();
             })
             .then(data => {
                 showLoading(false);
                 if (data.status === 'success') {
-                    cart.saleId = data.sale_id; // Store saleId
                     generateReceipt(data.sale_id, customerId);
                     cart = [];
                     updateCartDisplay();
@@ -1502,7 +1529,7 @@ $user = $_SESSION['mwena_user'];
                     fetchDashboardStats();
                     openModal('receiptModal');
                 } else {
-                    showError(data.message);
+                    showError(data.message || 'Checkout failed');
                 }
             })
             .catch(error => {
@@ -1513,72 +1540,88 @@ $user = $_SESSION['mwena_user'];
     }
 
     function generateReceipt(saleId, customerId) {
-        fetch('fetch_customers.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: `id=${customerId || ''}`
-            })
-            .then(response => {
-                console.log('generateReceipt fetch_customers Response Status:', response.status);
-                return response.json();
-            })
-            .then(customer => {
-                const customerData = Array.isArray(customer) ? customer[0] : customer;
-                const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                const tax = subtotal * 0.085;
-                const total = subtotal + tax;
-                const now = new Date();
+        showLoading(true);
+        Promise.all([
+                fetch('fetch_sales.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `id=${saleId}`
+                }).then(response => response.json()),
+                fetch('fetch_sale_items.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `sale_id=${saleId}`
+                }).then(response => response.json()),
+                customerId ? fetch('fetch_customers.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `id=${customerId}`
+                }).then(response => response.json()) : Promise.resolve(null)
+            ])
+            .then(([sales, items, customer]) => {
+                showLoading(false);
+                if (sales.length === 0) {
+                    showError('Sale not found');
+                    return;
+                }
+                const sale = sales[0];
+                const customerData = customer && customer.length > 0 ? customer[0] : null;
                 document.getElementById('receiptContent').innerHTML = `
-                    <div class="receipt-header">
-                        <h2>MWENA SUPERMARKET</h2>
-                        <p>Kireka Namugongo Road, 2km from Kampala</p>
-                        <p>Phone: +256 700 123 456</p>
-                        <p>Email: info@mwenasupermarket.com</p>
-                    </div>
-                    <div class="receipt-info">
-                        <p><span>Date:</span> <span>${now.toLocaleDateString()}</span></p>
-                        <p><span>Time:</span> <span>${now.toLocaleTimeString()}</span></p>
-                        <p><span>Sale ID:</span> <span>#${saleId}</span></p>
-                        <p><span>Customer:</span> <span>${customerId && customerData ? customerData.name : 'Walk-in Customer'}</span></p>
-                        ${customerId && customerData ? `<p><span>Email:</span> <span>${customerData.email}</span></p>` : ''}
-                    </div>
-                    <div class="receipt-items">
-                        <h3>Items Purchased:</h3>
-                        ${cart.map(item => `
-                            <div class="receipt-item">
-                                <div>
-                                    <strong>${item.name}</strong><br>
-                                    ${item.quantity} x $${item.price.toFixed(2)}
-                                </div>
-                                <div>$${(item.quantity * item.price).toFixed(2)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <div class="receipt-total">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>Subtotal:</span>
-                            <span>$${subtotal.toFixed(2)}</span>
+            <div class="receipt-header">
+                <h2>MWENA SUPERMARKET</h2>
+                <p>Kireka Namugongo Road, 2km from Kampala</p>
+                <p>Phone: +256 700 123 456</p>
+                <p>Email: info@mwenasupermarket.com</p>
+            </div>
+            <div class="receipt-info">
+                <p><span>Date:</span> <span>${new Date(sale.created_at).toLocaleDateString()}</span></p>
+                <p><span>Time:</span> <span>${new Date(sale.created_at).toLocaleTimeString()}</span></p>
+                <p><span>Sale ID:</span> <span>#${sale.id}</span></p>
+                <p><span>Customer:</span> <span>${customerData ? customerData.name : 'Walk-in Customer'}</span></p>
+                ${customerData ? `<p><span>Email:</span> <span>${customerData.email}</span></p>` : ''}
+            </div>
+            <div class="receipt-items">
+                <h3>Items Purchased:</h3>
+                ${items.map(item => `
+                    <div class="receipt-item">
+                        <div>
+                            <strong>${item.product_name}</strong><br>
+                            ${item.quantity} x $${parseFloat(item.price).toFixed(2)}
                         </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <span>Tax (8.5%):</span>
-                            <span>$${tax.toFixed(2)}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 1.2rem; border-top: 2px solid #333; padding-top: 10px;">
-                            <span>TOTAL:</span>
-                            <span>$${total.toFixed(2)}</span>
-                        </div>
+                        <div>$${parseFloat(item.subtotal).toFixed(2)}</div>
                     </div>
-                    <div class="receipt-footer">
-                        <p>Thank you for shopping with us!</p>
-                        <p>Please keep this receipt for your records</p>
-                        <p>Return policy: 30 days with receipt</p>
-                    </div>`;
+                `).join('')}
+            </div>
+            <div class="receipt-total">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span>Subtotal:</span>
+                    <span>$${parseFloat(sale.subtotal).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span>Tax (8.5%):</span>
+                    <span>$${parseFloat(sale.tax).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 1.2rem; border-top: 2px solid #333; padding-top: 10px;">
+                    <span>TOTAL:</span>
+                    <span>$${parseFloat(sale.total).toFixed(2)}</span>
+                </div>
+            </div>
+            <div class="receipt-footer">
+                <p>Thank you for shopping with us!</p>
+                <p>Please keep this receipt for your records</p>
+                <p>Return policy: 30 days with receipt</p>
+            </div>`;
             })
             .catch(error => {
                 console.error('generateReceipt Error:', error);
-                showError('Failed to fetch customer data for receipt');
+                showLoading(false);
+                showError('Failed to generate receipt: ' + error.message);
             });
     }
 
@@ -1972,6 +2015,9 @@ $user = $_SESSION['mwena_user'];
                 })
                 .then(response => {
                     console.log('deleteCustomer Response Status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
                     return response.json();
                 })
                 .then(data => {
@@ -1982,7 +2028,7 @@ $user = $_SESSION['mwena_user'];
                         populateCustomerSelect();
                         fetchDashboardStats();
                     } else {
-                        showError(data.message);
+                        showError(data.message || 'Failed to delete customer');
                     }
                 })
                 .catch(error => {
@@ -1992,7 +2038,6 @@ $user = $_SESSION['mwena_user'];
                 });
         }
     }
-
     // Sales Functions
     function populateSalesTable() {
         showLoading(true);
