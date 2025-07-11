@@ -754,7 +754,7 @@ $user = $_SESSION['mwena_user'];
                     </li>
                     <!-- <li><a href="#" class="nav-link" data-section="suppliers"><i class="fas fa-truck"></i> Suppliers</a> -->
                     </li>
-                    <li><a href="#" class="nav-link" data-section="reports"><i class="fas fa-file-alt"></i> Reports</a></li>
+                    <!-- <li><a href="#" class="nav-link" data-section="reports"><i class="fas fa-file-alt"></i> Reports</a></li> -->
                     <li><a href="#" class="nav-link" data-section="settings"><i class="fas fa-cog"></i> Settings</a></li>
                 <?php endif; ?>
                 <?php if ($user['role'] === 'admin'): ?>
@@ -832,7 +832,7 @@ $user = $_SESSION['mwena_user'];
                         </div>
                     </div>
                 </div>
-                <div class="charts-grid">
+                <!-- <div class="charts-grid">
                     <div class="chart-card">
                         <h3>Sales Overview</h3>
                         <div class="chart-placeholder">
@@ -845,7 +845,7 @@ $user = $_SESSION['mwena_user'];
                             <i class="fas fa-chart-pie" style="font-size: 3rem; opacity: 0.3;"></i>
                         </div>
                     </div>
-                </div>
+                </div> -->
             </section>
 
             <!-- Point of Sale System -->
